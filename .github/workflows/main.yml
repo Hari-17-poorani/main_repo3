@@ -1,49 +1,79 @@
-# Use an official PHP image with Apache and FPM installed
-FROM php:8.1-apache
+name: Docker CI/CD Pipeline
 
-# Set build argument for branch
-ARG BRANCH
+on:
+  push:
+    branches: [main, dev]  # Triggers on both branches
 
-# Install required dependencies (e.g., for Laravel)
-RUN apt-get update && apt-get install -y \
-    libpng-dev \
-    libjpeg62-turbo-dev \
-    libfreetype6-dev \
-    vim \
-    nano \
-    unzip \
-    zip \
-    git \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd pdo pdo_mysql
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
 
-# Enable Apache modules (rewrite, headers, etc.)
-RUN a2enmod rewrite headers
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.ref_name }}  # Checks out the branch that triggered the workflow
 
-# Set the working directory in the container
-WORKDIR /var/www/html
+      - name: Pull latest changes
+        run: git pull origin ${{ github.ref_name }}
 
-# Create the custom DocumentRoot directory
-RUN mkdir -p /var/www/html
+      - name: Set up Docker Image Version
+        id: versioning
+        run: |
+          VERSION=$( TZ=Asia/Kolkata date +'%Y%m%d%H%M%S') # Generates a timestamp-based version
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-# Copy the application files to the custom DocumentRoot
-COPY . /var/www/html
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-# Branch-specific configurations
-RUN if [ "$BRANCH" = "main" ]; then \
-      echo "Setting up main branch configuration"; \
-      echo "php_value upload_max_filesize 20M" >> /etc/apache2/conf-available/php.ini; \
-    elif [ "$BRANCH" = "dev" ]; then \
-      echo "Setting up dev branch configuration"; \
-      echo "php_value upload_max_filesize 50M" >> /etc/apache2/conf-available/php.ini; \
-    fi
+      - name: Build and Push Docker Image (Main Branch)
+        if: github.ref_name == 'main'
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/node-js:latest
+            ${{ secrets.DOCKER_USERNAME }}/node-js:main-${{ env.VERSION }}
 
-# Update the Apache configuration
-RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html|g' /etc/apache2/sites-available/000-default.conf \
-    && sed -i '/<VirtualHost \*:80>/a <Directory /var/www/html>\n    Options Indexes FollowSymLinks\n    AllowOverride All\n    Require all granted\n</Directory>' /etc/apache2/sites-available/000-default.conf
+      - name: Build and Push Docker Image (Dev Branch)
+        if: github.ref_name == 'dev'
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/node-js:dev-latest
+            ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
 
-# Expose port 80 for Apache
-EXPOSE 80
+      - name: Deploy to EC2 (Main Branch)
+        if: github.ref_name == 'main'
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          script: |
+            docker stop aita_container || true
+            docker rm aita_container || true
+            docker pull ${{ secrets.DOCKER_USERNAME }}/node-js:main-${{ env.VERSION }}
+            docker run -d --name aita_container -p 80:80 ${{ secrets.DOCKER_USERNAME }}/node-js:main-${{ env.VERSION }}
 
-# Start Apache service
-CMD ["apache2-foreground"]
+      - name: Deploy to EC2 (Dev Branch)
+        if: github.ref_name == 'dev'
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          script: |
+            docker stop aita_container_dev || true
+            docker rm aita_container_dev || true
+            docker pull ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
+            docker run -d --name aita_container_dev -p 8080:80 ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
+
+      - name: Push latest changes
+        run: git push origin ${{ github.ref_name }}
