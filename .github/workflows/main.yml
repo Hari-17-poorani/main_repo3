@@ -7,8 +7,6 @@ on:
 jobs:
   build-test-deploy:
     runs-on: ubuntu-latest
-permissions:
-      contents: write  # Grants write access to repository contents
       
     steps:
       - name: Checkout code
