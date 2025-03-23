@@ -58,13 +58,17 @@ jobs:
             fi
 
             echo "Stopping and removing existing container if it exists..."
-            docker ps -q --filter "name=$CONTAINER_NAME" | grep -q . && docker stop $CONTAINER_NAME && docker rm $CONTAINER_NAME || true
+            if docker ps -q --filter "name=$CONTAINER_NAME" | grep -q .; then
+              docker stop $CONTAINER_NAME
+              docker rm $CONTAINER_NAME
+            fi
 
             echo "Pulling latest Docker image..."
             docker pull ${{ secrets.DOCKER_USERNAME }}/dev_repo:${BRANCH}-${{ env.VERSION }}
 
             echo "Running new container..."
-            docker run -d --name $CONTAINER_NAME -p $PORT:80 --restart unless-stopped ${{ secrets.DOCKER_USERNAME }}/dev_repo:${BRANCH}-${{ env.VERSION }}
+            docker run -d --name $CONTAINER_NAME -p $PORT:80 --restart unless-stopped \
+              ${{ secrets.DOCKER_USERNAME }}/dev_repo:${BRANCH}-${{ env.VERSION }}
 
       # Push latest changes if needed
       - name: Push latest changes
