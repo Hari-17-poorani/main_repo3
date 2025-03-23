@@ -49,9 +49,9 @@ jobs:
             # Ensure the script runs in bash
             set -e
 
-            BRANCH="${{ github.ref_name }}"
-            CONTAINER_NAME="php_app_${BRANCH}"
-            PORT=80
+            export BRANCH="${{ github.ref_name }}"
+            export CONTAINER_NAME="php_app_${BRANCH}"
+            export PORT=80
 
             # Use `=` instead of `==` for POSIX compatibility
             if [ "$BRANCH" = "dev" ]; then
@@ -63,10 +63,10 @@ jobs:
             docker rm $CONTAINER_NAME || true
 
             echo "Pulling latest Docker image..."
-            docker pull ${{ secrets.DOCKER_USERNAME }}/php-app:${BRANCH}-${{ env.VERSION }}
+            docker pull ${{ secrets.DOCKER_USERNAME }}/php-app:$BRANCH-${{ env.VERSION }}
 
             echo "Running new container..."
-            docker run -d --name $CONTAINER_NAME -p $PORT:80 ${{ secrets.DOCKER_USERNAME }}/php-app:${BRANCH}-${{ env.VERSION }}
+            docker run -d --name $CONTAINER_NAME -p $PORT:80 ${{ secrets.DOCKER_USERNAME }}/php-app:$BRANCH-${{ env.VERSION }}
 
       # Push latest changes if needed
       - name: Push latest changes
