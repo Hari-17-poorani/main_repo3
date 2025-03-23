@@ -19,7 +19,7 @@ jobs:
       - name: Set up Docker Image Version
         id: versioning
         run: |
-          VERSION=$( TZ=Asia/Kolkata date +'%Y%m%d%H%M%S') # Generates a timestamp-based version
+          VERSION=$(TZ=Asia/Kolkata date +'%Y%m%d%H%M%S') # Generates a timestamp-based version
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Login to Docker Hub
@@ -35,8 +35,8 @@ jobs:
           context: . 
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/php-app:${{ github.ref_name }}-latest
-            ${{ secrets.DOCKER_USERNAME }}/php-app:${{ github.ref_name }}-${{ env.VERSION }}
+            ${{ secrets.DOCKER_USERNAME }}/dev_repo:${{ github.ref_name }}-latest
+            ${{ secrets.DOCKER_USERNAME }}/dev_repo:${{ github.ref_name }}-${{ env.VERSION }}
 
       # Deploy to EC2
       - name: Deploy to EC2
@@ -46,27 +46,25 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           script: |
-            # Ensure the script runs in bash
+            #!/bin/bash
             set -e
 
-            export BRANCH="${{ github.ref_name }}"
-            export CONTAINER_NAME="php_app_${BRANCH}"
-            export PORT=80
+            BRANCH="${{ github.ref_name }}"
+            CONTAINER_NAME="dev_repo_${BRANCH}"
+            PORT=80
 
-            # Use `=` instead of `==` for POSIX compatibility
-            if [ "$BRANCH" = "dev" ]; then
+            if [[ "$BRANCH" == "dev" ]]; then
               PORT=8080
             fi
 
             echo "Stopping and removing existing container if it exists..."
-            docker stop $CONTAINER_NAME || true
-            docker rm $CONTAINER_NAME || true
+            docker ps -q --filter "name=$CONTAINER_NAME" | grep -q . && docker stop $CONTAINER_NAME && docker rm $CONTAINER_NAME || true
 
             echo "Pulling latest Docker image..."
-            docker pull ${{ secrets.DOCKER_USERNAME }}/php-app:$BRANCH-${{ env.VERSION }}
+            docker pull ${{ secrets.DOCKER_USERNAME }}/dev_repo:${BRANCH}-${{ env.VERSION }}
 
             echo "Running new container..."
-            docker run -d --name $CONTAINER_NAME -p $PORT:80 ${{ secrets.DOCKER_USERNAME }}/php-app:$BRANCH-${{ env.VERSION }}
+            docker run -d --name $CONTAINER_NAME -p $PORT:80 --restart unless-stopped ${{ secrets.DOCKER_USERNAME }}/dev_repo:${BRANCH}-${{ env.VERSION }}
 
       # Push latest changes if needed
       - name: Push latest changes
