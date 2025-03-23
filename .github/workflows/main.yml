@@ -16,9 +16,6 @@ jobs:
         with:
           ref: ${{ github.ref_name }}  # Checks out the branch that triggered the workflow
 
-      - name: Pull latest changes
-        run: git pull origin ${{ github.ref_name }}
-
       - name: Set up Docker Image Version
         id: versioning
         run: |
@@ -31,57 +28,34 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # Build and Push Docker Image for Main Branch
-      - name: Build and Push Docker Image (Main Branch)
-        if: github.ref_name == 'main'
+      # Build and Push Docker Images
+      - name: Build and Push Docker Image
         uses: docker/build-push-action@v2
         with:
           context: . 
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/node-js:main-latest
-            ${{ secrets.DOCKER_USERNAME }}/node-js:main-${{ env.VERSION }}
+            ${{ secrets.DOCKER_USERNAME }}/dev_repo:${{ github.ref_name }}-latest
+            ${{ secrets.DOCKER_USERNAME }}/dev_repo:${{ github.ref_name }}-${{ env.VERSION }}
 
-      # Build and Push Docker Image for Dev Branch
-      - name: Build and Push Docker Image (Dev Branch)
-        if: github.ref_name == 'dev'
-        uses: docker/build-push-action@v2
-        with:
-          context: . 
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/node-js:dev-latest
-            ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
-
-      # Deploy to EC2 (Main Branch)
-      - name: Deploy to EC2 (Main Branch)
-        if: github.ref_name == 'main'
+      # Deploy to EC2
+      - name: Deploy to EC2
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           script: |
-            docker stop aita_container || true
-            docker rm aita_container || true
-            docker pull ${{ secrets.DOCKER_USERNAME }}/node-js:main-${{ env.VERSION }}
-            docker run -d --name aita_container -p 80:80 ${{ secrets.DOCKER_USERNAME }}/node-js:main-${{ env.VERSION }}
+            BRANCH=${{ github.ref_name }}
+            CONTAINER_NAME="dev_repo_${BRANCH}"
+            PORT=80
+            if [ "$BRANCH" = "dev" ]; then PORT=8080; fi
+            docker stop $CONTAINER_NAME || true
+            docker rm $CONTAINER_NAME || true
+            docker pull ${{ secrets.DOCKER_USERNAME }}/dev_repo:${{ github.ref_name }}-${{ env.VERSION }}
+            docker run -d --name $CONTAINER_NAME -p $PORT:80 ${{ secrets.DOCKER_USERNAME }}/dev_repo:${{ github.ref_name }}-${{ env.VERSION }}
 
-      # Deploy to EC2 (Dev Branch)
-      - name: Deploy to EC2 (Dev Branch)
-        if: github.ref_name == 'dev'
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_PRIVATE_KEY }}
-          script: |
-            docker stop aita_container_dev || true
-            docker rm aita_container_dev || true
-            docker pull ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
-            docker run -d --name aita_container_dev -p 8080:80 ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
-
-      # Push latest changes (Main and Dev Branches)
+      # Push latest changes if needed
       - name: Push latest changes
         run: |
           git config --global user.name "GitHub Actions"
