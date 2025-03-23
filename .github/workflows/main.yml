@@ -13,11 +13,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          ref: ${{ github.ref_name }}  # Checks out the branch that triggered the workflow
+
+      - name: Pull latest changes
+        run: git pull origin ${{ github.ref_name }}
 
       - name: Set up Docker Image Version
         id: versioning
         run: |
-          VERSION=$(TZ=Asia/Kolkata date +'%Y%m%d%H%M%S')
+          VERSION=$( TZ=Asia/Kolkata date +'%Y%m%d%H%M%S') # Generates a timestamp-based version
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Login to Docker Hub
@@ -26,48 +31,72 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and Push Docker Image
+      # Build and Push Docker Image (Main Branch)
+      - name: Build and Push Docker Image (Main Branch)
+        if: github.ref_name == 'main'
         uses: docker/build-push-action@v2
         with:
           context: .
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/node-js:${{ github.ref_name }}-latest
-            ${{ secrets.DOCKER_USERNAME }}/node-js:${{ github.ref_name }}-${{ env.VERSION }}
+            ${{ secrets.DOCKER_USERNAME }}/node-js:latest
+            ${{ secrets.DOCKER_USERNAME }}/node-js:main-${{ env.VERSION }}
 
-      - name: Deploy to EC2
+      # Build and Push Docker Image (Dev Branch)
+      - name: Build and Push Docker Image (Dev Branch)
+        if: github.ref_name == 'dev'
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/node-js:dev-latest
+            ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
+
+      # Deploy to EC2 (Main Branch)
+      - name: Deploy to EC2 (Main Branch)
+        if: github.ref_name == 'main'
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           script: |
-            BRANCH="${{ github.ref_name }}"
-            CONTAINER_NAME="aita_container"
-            PORT=80
+            docker stop aita_container || true
+            docker rm aita_container || true
+            docker pull ${{ secrets.DOCKER_USERNAME }}/node-js:main-${{ env.VERSION }}
+            docker run -d --name aita_container -p 80:80 --restart unless-stopped \
+              ${{ secrets.DOCKER_USERNAME }}/node-js:main-${{ env.VERSION }}
 
-            if [ "$BRANCH" = "dev" ]; then
-              CONTAINER_NAME="aita_container_dev"
-              PORT=8080
-            fi
+      # Deploy to EC2 (Dev Branch)
+      - name: Deploy to EC2 (Dev Branch)
+        if: github.ref_name == 'dev'
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          script: |
+            docker stop aita_container_dev || true
+            docker rm aita_container_dev || true
+            docker pull ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
+            docker run -d --name aita_container_dev -p 8080:80 --restart unless-stopped \
+              ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
 
-            echo "Stopping and removing existing container if it exists..."
-            if docker ps -aq --filter "name=$CONTAINER_NAME" | grep -q .; then
-              docker stop $CONTAINER_NAME
-              docker rm $CONTAINER_NAME
-            fi
-
-            echo "Pulling latest Docker image..."
-            docker pull ${{ secrets.DOCKER_USERNAME }}/node-js:${BRANCH}-${{ env.VERSION }}
-
-            echo "Running new container..."
-            docker run -d --name $CONTAINER_NAME -p $PORT:80 --restart unless-stopped \
-              ${{ secrets.DOCKER_USERNAME }}/node-js:${BRANCH}-${{ env.VERSION }}
-
+      # Push latest changes (Main and Dev Branches)
       - name: Push latest changes
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          git add .  # Add any changes if necessary
-          git commit -m "CI: Updated Docker image version" || echo "No changes to commit"
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/Hari-17-poorani/branch_repo_td.git ${{ github.ref_name }}
+          
+          # Ensure we fetch latest updates before committing
+          git fetch origin
+          
+          # Check for changes
+          if [[ $(git status --porcelain) ]]; then
+            git add .  
+            git commit -m "CI: Updated Docker image version"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/Hari-17-poorani/branch_repo_td.git ${{ github.ref_name }}
+          else
+            echo "No changes to commit, skipping push."
+          fi
