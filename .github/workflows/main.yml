@@ -46,11 +46,15 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           script: |
+            # Ensure the script runs in bash
+            set -e
+
             BRANCH="${{ github.ref_name }}"
             CONTAINER_NAME="php_app_${BRANCH}"
             PORT=80
 
-            if [[ "$BRANCH" == "dev" ]]; then
+            # Use `=` instead of `==` for POSIX compatibility
+            if [ "$BRANCH" = "dev" ]; then
               PORT=8080
             fi
 
