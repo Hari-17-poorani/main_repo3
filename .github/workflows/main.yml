@@ -53,8 +53,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/node-js:dev-latest
-            ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
+            ${{ secrets.DOCKER_USERNAME }}/dev_repo1:dev-latest
+            ${{ secrets.DOCKER_USERNAME }}/dev_repo1:dev-${{ env.VERSION }}
 
       # Deploy to EC2 (Main Branch)
       - name: Deploy to EC2 (Main Branch)
@@ -81,8 +81,8 @@ jobs:
           script: |
             docker stop aita_container_dev || true
             docker rm aita_container_dev || true
-            docker pull ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
-            docker run -d --name aita_container_dev -p 8080:80 ${{ secrets.DOCKER_USERNAME }}/node-js:dev-${{ env.VERSION }}
+            docker pull ${{ secrets.DOCKER_USERNAME }}/dev_repo1:dev-${{ env.VERSION }}
+            docker run -d --name aita_container_dev -p 8080:80 ${{ secrets.DOCKER_USERNAME }}/dev_repo1:dev-${{ env.VERSION }}
 
       # Push latest changes (Main and Dev Branches)
       - name: Push latest changes
